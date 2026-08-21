@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor E as Employee (browser)
+    participant MPS as MPS Employee Portal SPA<br/>(client: mps-portal, :3100)
+    participant KC as Keycloak HOSTED PAGE<br/>(:8080, realm: gov)
+
+    Note over MPS: The portal SPA has NO login form.<br/>Credentials are entered ONLY on Keycloak's page at :8080.
+
+    Note over E,KC: LOGIN — full-page redirect to Keycloak (Auth Code + PKCE, + conditional MFA)
+    E->>MPS: open http://localhost:3100
+    MPS-->>E: keycloak.init(login-required) → redirect browser to Keycloak
+    E->>KC: browser now at :8080/.../auth?client_id=mps-portal&code_challenge=...
+    Note over E,KC: User types credentials INTO KEYCLOAK (:8080), not the portal.<br/>(gov self-registration is OFF — employees are provisioned.)
+    E->>KC: enter username + password (on Keycloak)
+    alt approver (PS / CPO / IT_ADMIN) → OTP required
+        KC-->>E: Keycloak prompts for TOTP code
+        E->>KC: enter 6-digit code (on Keycloak)
+    end
+    KC->>KC: authenticate → create gov realm SSO session<br/>Set-Cookie: KEYCLOAK_IDENTITY (on :8080)
+    KC-->>E: redirect browser back to :3100 with ?code=...
+    E->>MPS: return to portal with ?code
+    MPS->>KC: POST /token (code + PKCE verifier)  ← SPA only ever sees the code
+    KC-->>MPS: access token (claims: agency, realm_access.roles, aud=backend-api)<br/>+ refresh + id token
+    MPS-->>E: render portal; screens chosen by agency + roles<br/>(SPA never handled the password)
+
+    Note over E,KC: ANOTHER GOV CLIENT — SILENT SSO (session cookie already on :8080)
+    E->>KC: open a second gov client → redirect to :8080/authorize?client_id=...
+    KC->>KC: gov realm session present → NO login page shown
+    KC-->>E: redirect back with ?code (silent) → that client exchanges for its own tokens
+
+    Note over E,KC: KEEP-ALIVE + LOGOUT
+    MPS->>KC: keycloak.updateToken(60) → refresh_token grant → new access token
+    E->>MPS: Log out → keycloak.logout() → end gov realm session on :8080
+
+    Note over MPS: The access token is then sent as Authorization: Bearer to the<br/>backend API (validated offline via JWKS) — outside this auth flow.

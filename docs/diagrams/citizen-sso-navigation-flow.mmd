@@ -1,0 +1,52 @@
+flowchart TB
+    citizen(["Citizen"])
+
+    subgraph KC["Keycloak — citizens realm (ONE identity, ONE SSO session)"]
+        authz["/authorize + /token<br/>Auth Code + PKCE"]
+        session[("SSO SESSION COOKIE<br/>on Keycloak domain<br/>created ONCE at first login")]
+    end
+
+    hub["Citizen Portal (hub / entry point)<br/>client: citizen-portal"]
+    mps["MPS Services<br/>client: mps-portal"]
+    nis["NIS Services<br/>client: nis-portal"]
+    gpl["GPL Services<br/>client: gpl-portal"]
+
+    api[("Backend / Service APIs<br/>validate token per client<br/>then enforce ownership")]
+
+    %% ---- First login (happens once) ----
+    citizen -->|"1 register / login ONCE"| hub
+    hub -->|"2 redirect to /authorize"| authz
+    authz -->|"3 enter credentials"| session
+    session -->|"4 auth code -> exchange"| hub
+    hub -->|"5 Token(citizen-portal)"| hub
+
+    %% ---- Navigate to MPS (NO second login) ----
+    citizen -->|"6 click MPS"| mps
+    mps -->|"7 redirect to /authorize (client=mps-portal)"| authz
+    session -->|"8 cookie present -> NO prompt, SILENT code"| authz
+    authz -->|"9 Token(mps-portal)"| mps
+
+    %% ---- Navigate to NIS (identical silent flow) ----
+    citizen -->|"10 click NIS"| nis
+    nis -->|"redirect /authorize (client=nis-portal)"| authz
+    session -->|"silent code (session reused)"| authz
+    authz -->|"Token(nis-portal)"| nis
+
+    %% ---- Navigate to GPL (identical silent flow) ----
+    citizen -->|"11 click GPL"| gpl
+    gpl -->|"redirect /authorize (client=gpl-portal)"| authz
+    session -->|"silent code (session reused)"| authz
+    authz -->|"Token(gpl-portal)"| gpl
+
+    %% ---- Every portal calls its API with its own token ----
+    hub -->|"Bearer Token"| api
+    mps -->|"Bearer Token"| api
+    nis -->|"Bearer Token"| api
+    gpl -->|"Bearer Token"| api
+
+    %% ---- Single logout ----
+    citizen -->|"12 logout once"| hub
+    hub -->|"RP-initiated logout"| session
+    session -->|"back-channel logout to all clients"| mps
+    session -->|"back-channel logout to all clients"| nis
+    session -->|"back-channel logout to all clients"| gpl

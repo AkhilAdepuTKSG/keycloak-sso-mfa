@@ -1,0 +1,168 @@
+# Government IAM POC — production-pattern stack, one command:
+#   cp .env.example .env   &&   docker compose up --build
+#
+# Keycloak runs in PRODUCTION mode on PostgreSQL (not start-dev).
+#
+# CITIZEN realm (citizens realm, SSO across all):
+#   http://localhost:3000  Citizen Portal (hub)                 [orange]
+#   http://localhost:3001  MPS Services (SSO proof)             [teal]
+#   http://localhost:3002  NIS Services (gate+register+dash)    [green]
+#   http://localhost:3003  GPL Services (SSO proof)             [blue]
+#   http://localhost:4100  Citizen Services API (NIS enrolment)
+# GOV realm:
+#   http://localhost:3100  MPS Employee Portal (workflow)       [indigo]
+#   http://localhost:4000  Workforce Backend API
+# Keycloak admin console:  http://localhost:8080  (from .env)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    build: ./keycloak
+    command: ["start", "--optimized", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      # Local prod-pattern: HTTP enabled, TLS terminates at the ingress in real deploys.
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/appdb
+      # iss as seen by clients (browser) vs JWKS/admin fetched over the internal network.
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/gov
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: gov
+      KEYCLOAK_AUDIENCE: backend-api
+      PROVISIONING_CLIENT_ID: provisioning-service
+      PROVISIONING_CLIENT_SECRET: ${PROVISIONING_CLIENT_SECRET}
+      CORS_ORIGINS: http://localhost:3100
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  # ---- Citizen services backend (NIS enrolment etc.) ----
+  citizen-backend:
+    build: ./citizen-backend
+    environment:
+      NODE_ENV: production
+      PORT: "4100"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/appdb
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/citizens
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: citizens
+      KEYCLOAK_AUDIENCE: citizen-api
+      PROVISIONING_CLIENT_ID: citizen-provisioning-service
+      PROVISIONING_CLIENT_SECRET: ${CITIZEN_PROVISIONING_CLIENT_SECRET}
+      CORS_ORIGINS: http://localhost:3002
+    ports:
+      - "4100:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  # ---- Government workforce SPA (full workflow UI) ----
+  mps-portal:
+    build: ./mops-portal
+    depends_on: [backend]
+    ports:
+      - "3100:80"
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: gov
+      CLIENT_ID: mps-portal
+      API_BASE_URL: http://localhost:4000
+
+  # ---- Citizen realm SSO portals (unchanged) ----
+  citizen-portal:
+    build: ./frontend
+    image: citizen-sso-frontend:latest
+    depends_on: [keycloak]
+    ports:
+      - "3000:80"
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: citizens
+      CLIENT_ID: citizen-portal
+      PORTAL_TITLE: "Citizen Portal"
+      PORTAL_KIND: hub
+      PORTAL_THEME: orange
+      LINKS: '[{"title":"MPS Services","url":"http://localhost:3001"},{"title":"NIS Services","url":"http://localhost:3002"},{"title":"GPL Services","url":"http://localhost:3003"}]'
+
+  citizen-mps-portal:
+    build: ./frontend
+    image: citizen-sso-frontend:latest
+    depends_on: [citizen-portal]
+    ports:
+      - "3001:80"
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: citizens
+      CLIENT_ID: mps-portal
+      PORTAL_TITLE: "MPS Services"
+      PORTAL_KIND: service
+      PORTAL_THEME: teal
+      LINKS: '[{"title":"Citizen Portal","url":"http://localhost:3000"}]'
+
+  # NIS is a real service now: gate + registration + dashboard, wired to citizen-backend.
+  citizen-nis-portal:
+    build: ./nis-portal
+    depends_on: [citizen-backend]
+    ports:
+      - "3002:80"
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: citizens
+      CLIENT_ID: nis-portal
+      API_BASE_URL: http://localhost:4100
+
+  citizen-gpl-portal:
+    build: ./frontend
+    image: citizen-sso-frontend:latest
+    depends_on: [citizen-portal]
+    ports:
+      - "3003:80"
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: citizens
+      CLIENT_ID: gpl-portal
+      PORTAL_TITLE: "GPL Services"
+      PORTAL_KIND: service
+      PORTAL_THEME: blue
+      LINKS: '[{"title":"Citizen Portal","url":"http://localhost:3000"}]'
+
+volumes:
+  pgdata:

@@ -1,0 +1,50 @@
+sequenceDiagram
+    actor E as Employee (browser)
+    participant P as MPS Employee Portal (SPA :3100)
+    participant KC as Keycloak — gov realm
+    participant API as backend :4000
+    participant SA as Keycloak Admin API<br/>(provisioning-service)
+    participant DB as PostgreSQL (appdb)
+
+    Note over E,KC: 1 — Login (Auth Code + PKCE; conditional MFA for PS/CPO/IT_ADMIN)
+    E->>P: open mps-portal
+    P->>KC: /authorize (client=mps-portal, PKCE S256)
+    E->>KC: credentials (+ OTP if approver)
+    KC-->>P: code → token<br/>(iss=gov, agency claim, realm roles, aud=backend-api)
+
+    Note over E,DB: 2 — Effective authority (roles + LIVE delegation)
+    P->>API: GET /api/me (Bearer)
+    API->>KC: validate JWT offline (JWKS, iss/aud/azp)
+    API->>DB: active delegations for sub (now within window?)
+    API-->>P: roles, agency, canApproveAsPS, actingAsDelegate
+
+    Note over E,DB: 3 — Originate (Agency Originator, e.g. PS of MOH → MPS)
+    E->>P: New employment request
+    P->>API: POST /api/employment-requests
+    API->>API: require AGENCY_ORIGINATOR; origin = token agency
+    API->>DB: INSERT request (SUBMITTED) + transition + audit
+    API-->>P: request
+
+    Note over E,DB: 4 — CPO assigns to HR (client-supplied subject verified)
+    E->>P: assign to HR officer
+    P->>API: POST /:id/assign
+    API->>SA: verify assignee actually holds HR_OFFICER
+    API->>DB: UPDATE ... WHERE status=SUBMITTED (atomic) + transition + audit
+    Note over API,DB: HR validate → CPO endorse follow the same atomic pattern
+
+    Note over E,DB: 5 — Approve (PS by role, OR delegate acting-as) → minute
+    E->>P: approve endorsed request
+    P->>API: POST /:id/approve
+    API->>DB: active delegation for sub? (live, time-bound)
+    API->>API: resolveApprover = PS(agency=MPS) OR PERMANENT_SECRETARY_APPROVER
+    API->>DB: UPDATE ... WHERE status=ENDORSED (atomic)
+    API->>DB: INSERT minute + audit (effectiveRole, delegatedBy, delegationId)
+    API-->>P: approved
+    P-->>E: minute document
+
+    Note over E,SA: 6 — IT admin provisioning (separate flow, same pattern)
+    E->>P: create user (IT_ADMIN screen)
+    P->>API: POST /api/admin/users
+    API->>API: require IT_ADMIN
+    API->>SA: create user + set agency group + assign roles
+    API->>DB: INSERT audit

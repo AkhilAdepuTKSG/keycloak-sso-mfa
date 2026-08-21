@@ -1,0 +1,106 @@
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --card-border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --success: #22c55e;
+  --danger: #ef4444;
+  /* Per-portal brand colour; overridden by [data-theme] below. Default = orange. */
+  --brand: #f97316;
+  --brand-2: #c2410c;
+  --accent: var(--brand);
+}
+
+/* Per-portal palettes (set on <html data-theme="..."> from runtime config). */
+:root[data-theme="orange"] { --brand: #f97316; --brand-2: #c2410c; }  /* Citizen Portal */
+:root[data-theme="teal"]   { --brand: #14b8a6; --brand-2: #0f766e; }  /* MPS Services   */
+:root[data-theme="green"]  { --brand: #22c55e; --brand-2: #15803d; }  /* NIS Services   */
+:root[data-theme="blue"]   { --brand: #3b82f6; --brand-2: #1d4ed8; }  /* GPL Services   */
+:root[data-theme="indigo"] { --brand: #6366f1; --brand-2: #4338ca; }  /* Agency portal  */
+:root[data-theme="violet"] { --brand: #a855f7; --brand-2: #7e22ce; }  /* Staff console  */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.page { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+
+.banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 20px 24px; border-radius: 14px; margin-bottom: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+}
+.banner h1 { margin: 4px 0 0; font-size: 1.6rem; }
+.kind { font-size: 0.72rem; letter-spacing: 0.14em; opacity: 0.85; }
+.client-badge {
+  font-family: ui-monospace, monospace; font-size: 0.78rem;
+  background: rgba(0,0,0,0.28); padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+}
+
+.card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 14px; padding: 20px 22px; margin-bottom: 16px;
+}
+.card.success { border-color: rgba(34,197,94,0.4); }
+.card.notice {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--card));
+}
+.card.notice h3 { color: var(--brand); }
+.card h2 { margin: 0 0 6px; color: var(--success); }
+.card h3 { margin: 0 0 6px; }
+
+.muted { color: var(--muted); font-size: 0.9rem; }
+.mono { font-family: ui-monospace, monospace; font-size: 0.82rem; word-break: break-all; }
+
+.identity { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin: 16px 0 0; }
+.identity > div { display: flex; flex-direction: column; gap: 2px; }
+.identity dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.identity dd { margin: 0; font-size: 0.95rem; }
+
+.links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.portal-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #0b1220; border: 1px solid var(--card-border);
+  color: var(--text); text-decoration: none; padding: 12px 18px; border-radius: 10px;
+  font-weight: 600; transition: border-color 0.15s, transform 0.05s;
+}
+.portal-link:hover { border-color: var(--accent); }
+.portal-link:active { transform: translateY(1px); }
+.arrow { color: var(--accent); }
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn {
+  background: #0b1220; color: var(--text); border: 1px solid var(--card-border);
+  padding: 10px 16px; border-radius: 9px; cursor: pointer; font-size: 0.9rem;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.danger { border-color: rgba(239,68,68,0.5); color: #fecaca; }
+.btn.danger:hover { border-color: var(--danger); }
+
+.raw {
+  margin-top: 14px; background: #0b1220; border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 14px; overflow-x: auto; font-size: 0.8rem;
+}
+
+footer { text-align: center; margin-top: 24px; }
+
+.fatal { max-width: 640px; margin: 60px auto; padding: 24px; color: var(--text); font-family: system-ui; }
+.fatal pre { background: #1e293b; padding: 12px; border-radius: 8px; overflow-x: auto; }
+
+@media (max-width: 600px) { .identity { grid-template-columns: 1fr; } }
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f1f5f9; --card: #ffffff; --card-border: #e2e8f0;
+    --text: #0f172a; --muted: #64748b;
+  }
+  .portal-link, .btn, .raw { background: #f8fafc; }
+}
