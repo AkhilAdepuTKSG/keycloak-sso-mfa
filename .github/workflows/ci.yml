@@ -6,13 +6,13 @@ on:
   pull_request:
 
 jobs:
-  backends:
-    name: backend (${{ matrix.pkg }})
+  services:
+    name: service (${{ matrix.pkg }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        pkg: [backend, citizen-backend]
+        pkg: [resolver, registry-api]
     defaults:
       run:
         working-directory: ${{ matrix.pkg }}
@@ -27,41 +27,39 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  frontends:
-    name: frontend (${{ matrix.pkg }})
+  portal:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        pkg: [frontend, mops-portal, nis-portal]
     defaults:
       run:
-        working-directory: ${{ matrix.pkg }}
+        working-directory: portal
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: ${{ matrix.pkg }}/package-lock.json
+          cache-dependency-path: portal/package-lock.json
       - run: npm ci
       - run: npm run build
 
+  seed:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: seed/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
   docker-build:
-    name: docker compose build
+    name: docker compose build (incl. Keycloak SPI)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cp .env.example .env
       - run: docker compose build
-
-  # Integration tests run against a live stack. Skeleton left disabled until a
-  # dedicated test client (token issuance) is provisioned in CI — see docs/TESTING.md.
-  # integration:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - run: cp .env.example .env
-  #     - run: docker compose up -d --build
-  #     - run: ./scripts/wait-for-keycloak.sh
-  #     - run: ./scripts/integration-smoke.sh

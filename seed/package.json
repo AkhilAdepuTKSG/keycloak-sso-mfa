@@ -1,0 +1,17 @@
+{
+  "name": "citizen360-seed",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Links synthetic registry records into Citizen 360 and creates Keycloak users (username = CID)",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "typescript": "^5.6.3"
+  }
+}
