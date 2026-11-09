@@ -252,7 +252,7 @@
     {
       "clientId": "mps-portal",
       "name": "MPS Workforce",
-      "description": "Citizen 360 POC portal on http://localhost:7202",
+      "description": "MPS Workforce (public-service staff, not part of My Guyana) on http://localhost:7202",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",
@@ -468,6 +468,79 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "mps-scholarships",
+      "name": "MPS Scholarships",
+      "description": "Citizen 360 POC portal on http://localhost:7205",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "http://localhost:7205",
+      "baseUrl": "http://localhost:7205/",
+      "redirectUris": [
+        "http://localhost:7205/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+",
+        "citizen.login.id_types": "EMAIL,NIS,NATIONAL_ID,PASSPORT,DL,EID",
+        "citizen.login.id_label": "Email address or any government ID",
+        "default.acr.values": "basic"
+      },
+      "protocolMappers": [
+        {
+          "name": "cid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "cid",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "login id type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "citizen.login_id_type",
+            "claim.name": "login_id_type",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "person loa",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "citizen.person_loa",
+            "claim.name": "person_loa",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "authenticationFlows": [
@@ -505,21 +578,53 @@
           "authenticatorFlow": true,
           "requirement": "CONDITIONAL",
           "priority": 10,
-          "flowAlias": "citizen-level-verified",
+          "flowAlias": "citizen-level-basic",
           "userSetupAllowed": false
         },
         {
           "authenticatorFlow": true,
           "requirement": "CONDITIONAL",
           "priority": 20,
+          "flowAlias": "citizen-level-verified",
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "CONDITIONAL",
+          "priority": 30,
           "flowAlias": "citizen-level-high",
           "userSetupAllowed": false
         }
       ]
     },
     {
+      "alias": "citizen-level-basic",
+      "description": "LoA 1 (basic): the login form. Any ID the portal accepts + password, resolved through Citizen 360",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorConfig": "loa-basic",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "citizen-identifier-first",
+          "authenticatorConfig": "citizen-identifier-defaults",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
       "alias": "citizen-level-verified",
-      "description": "LoA 2 (verified): any ID the portal accepts + password, resolved through Citizen 360",
+      "description": "LoA 2 (verified): passes if the login used a government ID; after an email login, asks for one",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -533,8 +638,7 @@
           "userSetupAllowed": false
         },
         {
-          "authenticator": "citizen-identifier-first",
-          "authenticatorConfig": "citizen-identifier-defaults",
+          "authenticator": "citizen-verified-step-up",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 20,
@@ -568,6 +672,13 @@
     }
   ],
   "authenticatorConfig": [
+    {
+      "alias": "loa-basic",
+      "config": {
+        "loa-condition-level": "1",
+        "loa-max-age": "36000"
+      }
+    },
     {
       "alias": "loa-verified",
       "config": {

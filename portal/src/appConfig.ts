@@ -1,7 +1,9 @@
 // Runtime config injected via /env-config.js (window.__APP_CONFIG__), written per
-// container by docker-entrypoint.d/40-env-config.sh. One image, five portals.
+// container by docker-entrypoint.d/40-env-config.sh. One image, the citizen-facing
+// portals: My Guyana, NIS, GRO, Passport and MPS Scholarships.
+// (MPS Workforce is a public-service staff portal with its own frontend in mps-workforce/.)
 
-export type PortalKind = "myguyana" | "nis" | "mps" | "gro" | "passport";
+export type PortalKind = "myguyana" | "nis" | "gro" | "passport" | "scholarships";
 
 export interface PortalLink {
   kind: PortalKind;
@@ -9,6 +11,8 @@ export interface PortalLink {
   url: string;
   note?: string;
 }
+
+export type RegistryKey = "nis" | "gro" | "passport" | "scholarships";
 
 export interface AppConfig {
   keycloakUrl: string;
@@ -18,7 +22,7 @@ export interface AppConfig {
   title: string;
   subtitle: string;
   resolverUrl: string;
-  registryUrls: Record<"nis" | "mps" | "gro" | "passport", string>;
+  registryUrls: Record<RegistryKey, string>;
   links: PortalLink[];
 }
 
@@ -34,9 +38,9 @@ export const appConfig: AppConfig = {
   resolverUrl: raw.resolverUrl ?? "http://localhost:7090",
   registryUrls: raw.registryUrls ?? {
     nis: "http://localhost:7101",
-    mps: "http://localhost:7102",
     gro: "http://localhost:7103",
     passport: "http://localhost:7104",
+    scholarships: "http://localhost:7105",
   },
   links: raw.links ?? [],
 };

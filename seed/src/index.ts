@@ -1,8 +1,9 @@
 // Citizen 360 seed loader.
 //
-//  1. Extract every record from the four registry APIs (+ a small GRA driver's-licence CSV).
+//  1. Extract every record from the five registry APIs (+ a small GRA driver's-licence CSV).
 //  2. Link records into people by cross-reference keys: national ID and GRO birth number.
-//     Simple deterministic matching (union-find); no probabilistic matching.
+//     Simple deterministic matching (union-find); no probabilistic matching. A scholarship
+//     applicant with no government ID becomes a provisional person at Basic assurance.
 //  3. Write each person and each ID through the Resolver's write path (lock, check, insert).
 //  4. Simulate the F1 failure: one NIS number with two active owners.
 //  5. Create Keycloak users with username = CID and the test passwords from people.ts.
@@ -29,6 +30,7 @@ const REGISTRY_URLS = {
   MPS: env("MPS_API_URL", "http://mps-api:8080"),
   GRO: env("GRO_API_URL", "http://gro-api:8080"),
   PASSPORT: env("PASSPORT_API_URL", "http://passport-api:8080"),
+  SCHOLARSHIPS: env("SCHOLARSHIPS_API_URL", "http://scholarships-api:8080"),
 };
 const CLICKHOUSE = env("CLICKHOUSE_URL", "http://clickhouse:8123");
 const CH_ADMIN = env("CLICKHOUSE_ADMIN_USER");
@@ -72,7 +74,7 @@ async function waitFor(name: string, url: string, ok: (r: Response) => boolean =
 // 1. Extract
 // ---------------------------------------------------------------------------
 
-type System = "NIS" | "MPS" | "GRO" | "PASSPORT" | "GRA";
+type System = "NIS" | "MPS" | "GRO" | "PASSPORT" | "SCHOLARSHIPS" | "GRA";
 
 interface Claim {
   type: string;
@@ -145,6 +147,17 @@ async function extractAll(): Promise<SourceRecord[]> {
     });
   }
 
+  for (const r of await extract("SCHOLARSHIPS", "applications")) {
+    // Email is a contact, never a linking key: a family can share one.
+    out.push({
+      system: "SCHOLARSHIPS",
+      recordId: `scholarship_application:${r.id}`,
+      anchors: anchors(r.national_id, null),
+      claims: [{ type: "EMAIL", value: r.applicant_email, status: "active", verified: "none", source: "SCHOLARSHIPS" }],
+      displayName: `${r.first_name} ${r.last_name}`,
+    });
+  }
+
   const csv = readFileSync(join(__dirname, "..", "extracts", "gra-driver-licences.csv"), "utf8").trim().split(/\r?\n/);
   for (const line of csv.slice(1)) {
     const [nid, dl] = line.split(",");
@@ -166,9 +179,12 @@ async function extractAll(): Promise<SourceRecord[]> {
 
 interface LinkedPerson {
   cid: string;
+  /** What the CID is derived from: NATIONAL_ID:..., GRO_BIRTH:... or, for a self-registered applicant, EMAIL:... */
+  anchor: string;
   nationalId: string | null;
   name: string;
-  loa: "verified" | "high";
+  status: "active" | "provisional";
+  loa: "basic" | "verified" | "high";
   records: SourceRecord[];
   claims: Claim[];
 }
@@ -201,21 +217,25 @@ function link(records: SourceRecord[]): LinkedPerson[] {
     }
     const gro = recs.flatMap((r) => r.anchors.filter((a) => a.startsWith("GRO:")).map((a) => a.slice(4)))[0];
     const nid = nids[0] ?? null;
-    const anchor = nid ? `NATIONAL_ID:${nid}` : `GRO_BIRTH:${gro}`;
     const claims: Claim[] = [];
     if (nid) claims.push({ type: "NATIONAL_ID", value: nid, status: "active", verified: "registry", source: "GECOM" });
     for (const r of recs) claims.push(...r.claims);
+    const email = claims.find((c) => c.type === "EMAIL")?.value;
+    const anchor = nid ? `NATIONAL_ID:${nid}` : gro ? `GRO_BIRTH:${gro}` : `EMAIL:${email}`;
+    const matched = Boolean(nid || gro); // matched to a registry by a government key
     const name = recs.find((r) => r.system === "NIS")?.displayName ?? recs.find((r) => r.displayName)?.displayName ?? "?";
     people.push({
       cid: uuidv5(anchor),
+      anchor,
       nationalId: nid,
       name,
-      loa: claims.some((c) => c.type === "EID") ? "high" : "verified",
+      status: matched ? "active" : "provisional",
+      loa: claims.some((c) => c.type === "EID") ? "high" : matched ? "verified" : "basic",
       records: recs,
       claims,
     });
   }
-  return people.sort((a, b) => (a.nationalId ?? "").localeCompare(b.nationalId ?? ""));
+  return people.sort((a, b) => (a.nationalId ?? "~").localeCompare(b.nationalId ?? "~"));
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +255,7 @@ async function load(people: LinkedPerson[]) {
   for (const p of people) {
     const created = await resolverPost("/v1/persons", {
       cid: p.cid,
-      status: "active",
+      status: p.status,
       loa: p.loa,
       links: p.records.map((r) => ({
         source_system: r.system,
@@ -262,7 +282,7 @@ async function load(people: LinkedPerson[]) {
 // ---------------------------------------------------------------------------
 
 async function simulateF1(people: LinkedPerson[]) {
-  const owner = people.find((p) => p.nationalId === F1_CONFLICT.secondOwnerNationalId);
+  const owner = people.find((p) => p.anchor === F1_CONFLICT.secondOwnerAnchor);
   if (!owner) throw new Error("F1 owner not found");
   const row = {
     id_type: F1_CONFLICT.idType,
@@ -330,8 +350,8 @@ async function upsertUser(token: string, cid: string, password: string): Promise
 async function accounts(people: LinkedPerson[]) {
   const token = await kcToken();
   for (const a of ACCOUNTS) {
-    const p = people.find((x) => x.nationalId === a.nationalId);
-    if (!p) throw new Error(`no linked person for national ID ${a.nationalId}`);
+    const p = people.find((x) => x.anchor === a.anchor);
+    if (!p) throw new Error(`no linked person for ${a.anchor}`);
     const what = await upsertUser(token, p.cid, a.password);
     console.log(`  ${what.padEnd(7)} ${p.cid}  ${p.name}  (${a.scenario})`);
   }
@@ -367,8 +387,8 @@ async function main() {
   console.log("\nPeople:");
   for (const p of people) {
     const ids = p.claims.map((c) => `${c.type}=${c.value}${c.status === "active" ? "" : "(" + c.status + ")"}`).join(" ");
-    const account = ACCOUNTS.some((a) => a.nationalId === p.nationalId) ? "account" : "no account";
-    console.log(`  ${p.cid}  ${p.name} [${account}]  ${ids}`);
+    const account = ACCOUNTS.some((a) => a.anchor === p.anchor) ? "account" : "no account";
+    console.log(`  ${p.cid}  ${p.name} [${account}, ${p.loa}]  ${ids}`);
   }
   console.log("\nSeed complete.");
 }

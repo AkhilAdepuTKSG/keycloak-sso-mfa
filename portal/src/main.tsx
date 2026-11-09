@@ -12,7 +12,8 @@ const root = createRoot(document.getElementById("root")!);
 
 // login-required: with an existing realm SSO session Keycloak redirects straight
 // back without a form — that silent round trip is the SSO. When the session is
-// below this client's required assurance level, Keycloak runs only the step-up.
+// below this client's required assurance level (e.g. a Basic email sign-in opening
+// a Verified portal), Keycloak runs only the step-up.
 keycloak
   .init({
     onLoad: "login-required",
@@ -48,11 +49,7 @@ keycloak
         {code === "access_denied" ? (
           <section className="card alert" role="alert">
             <h3>Sign-in not completed</h3>
-            <p>
-              {appConfig.kind === "mps"
-                ? "MPS Workforce needs High assurance, which comes from an EID linked to your account."
-                : "The sign-in was cancelled."}
-            </p>
+            <p>The sign-in was cancelled.</p>
             <div className="row">
               <button className="btn" onClick={() => keycloak.login()}>Try again</button>
               {home && <a className="btn" href={home}>Go to My Guyana</a>}

@@ -22,7 +22,7 @@ function unavailable(res: Response, err: unknown) {
 type ResolveResult =
   | { result: "found"; cid: string; loa: string; personStatus: string }
   | { result: "not_found" }
-  | { result: "conflict"; owners: number }
+  | { result: "conflict"; owners: number; reason: "data_conflict" | "shared_contact" }
   | { result: "inactive"; reason: string };
 
 async function resolve(type: IdType, rawValue: string): Promise<ResolveResult> {
@@ -31,13 +31,17 @@ async function resolve(type: IdType, rawValue: string): Promise<ResolveResult> {
   const active = [...new Set(owners.filter((o) => o.status === "active").map((o) => o.cid))];
 
   if (active.length === 0) return { result: "not_found" };
+  if (active.length > 1 && SHARED_TYPES.has(type)) {
+    // A family email: legitimate, but it can't identify one person. Not a data error, no alert.
+    return { result: "conflict", owners: active.length, reason: "shared_contact" };
+  }
   if (active.length > 1) {
     // 2+ active owners: refuse and alert a steward. Logged, not written: no per-login writes in ClickHouse (F9).
     logger.error("ALERT identifier has more than one active owner; login refused", {
       id_type: type,
       owners: active.length,
     });
-    return { result: "conflict", owners: active.length };
+    return { result: "conflict", owners: active.length, reason: "data_conflict" };
   }
 
   // Follow merges to the surviving person.

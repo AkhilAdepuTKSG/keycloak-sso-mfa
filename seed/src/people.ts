@@ -10,22 +10,23 @@
 export const DEMO_PASSWORD = "Citizen360-Demo!";
 
 export interface Account {
-  /** National ID that anchors the person in the registry data. */
-  nationalId: string;
+  /** What anchors the person in the registry data (and derives the CID): NATIONAL_ID:... or EMAIL:... */
+  anchor: string;
   password: string;
   /** Why this person is in the seed. */
   scenario: string;
 }
 
 export const ACCOUNTS: Account[] = [
-  { nationalId: "100000001", password: DEMO_PASSWORD, scenario: "has every ID, including an EID (High assurance)" },
-  { nationalId: "100000002", password: DEMO_PASSWORD, scenario: "no EID: MPS shows the link-or-enrol page" },
-  { nationalId: "100000003", password: DEMO_PASSWORD, scenario: "passport renewed: old number superseded" },
-  { nationalId: "100000004", password: DEMO_PASSWORD, scenario: "shares a family email; holds an EID" },
-  { nationalId: "100000005", password: DEMO_PASSWORD, scenario: "shares a family email; no passport" },
-  { nationalId: "100000006", password: DEMO_PASSWORD, scenario: "NIS 4000099 also linked to another person: NIS login refused" },
-  { nationalId: "100000007", password: DEMO_PASSWORD, scenario: "the other owner of NIS 4000099" },
-  // 100000008 (Ezekiel Marchetti) is in the registries and Citizen 360 but has not claimed an account.
+  { anchor: "NATIONAL_ID:100000001", password: DEMO_PASSWORD, scenario: "has every ID, incl. an EID; also an MPS staff member" },
+  { anchor: "NATIONAL_ID:100000002", password: DEMO_PASSWORD, scenario: "no EID; scholarship awarded; can use his email for Scholarships" },
+  { anchor: "NATIONAL_ID:100000003", password: DEMO_PASSWORD, scenario: "passport renewed: old number superseded" },
+  { anchor: "NATIONAL_ID:100000004", password: DEMO_PASSWORD, scenario: "shares a family email; holds an EID" },
+  { anchor: "NATIONAL_ID:100000005", password: DEMO_PASSWORD, scenario: "shares a family email (refused as a login); scholarship under review" },
+  { anchor: "NATIONAL_ID:100000006", password: DEMO_PASSWORD, scenario: "NIS 4000099 also linked to another person: NIS login refused" },
+  { anchor: "NATIONAL_ID:100000007", password: DEMO_PASSWORD, scenario: "the other owner of NIS 4000099; scholarship awarded" },
+  { anchor: "EMAIL:kezia.brathwaite@example.org", password: DEMO_PASSWORD, scenario: "self-registered for Scholarships with email only: Basic" },
+  // NATIONAL_ID:100000008 (Ezekiel Marchetti) is in the registries and Citizen 360 but has not claimed an account.
 ];
 
 /**
@@ -34,4 +35,4 @@ export const ACCOUNTS: Account[] = [
  * legacy bulk load would (design doc, failure F1). The daily integrity check reports it
  * and the Resolver refuses logins with this NIS number.
  */
-export const F1_CONFLICT = { idType: "NIS", idValue: "4000099", secondOwnerNationalId: "100000007" };
+export const F1_CONFLICT = { idType: "NIS", idValue: "4000099", secondOwnerAnchor: "NATIONAL_ID:100000007" };

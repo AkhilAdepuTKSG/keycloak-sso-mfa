@@ -72,7 +72,7 @@ public class CitizenIdentifierAuthenticatorFactory implements AuthenticatorFacto
 
     @Override
     public Authenticator create(KeycloakSession session) {
-        return new CitizenIdentifierAuthenticator(resolver);
+        return new CitizenIdentifierAuthenticator(resolver, false);
     }
 
     @Override

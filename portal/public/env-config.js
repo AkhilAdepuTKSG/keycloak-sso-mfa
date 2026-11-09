@@ -10,9 +10,9 @@ window.__APP_CONFIG__ = {
   resolverUrl: "http://localhost:7090",
   registryUrls: {
     nis: "http://localhost:7101",
-    mps: "http://localhost:7102",
     gro: "http://localhost:7103",
-    passport: "http://localhost:7104"
+    passport: "http://localhost:7104",
+    scholarships: "http://localhost:7105"
   },
   links: []
 };

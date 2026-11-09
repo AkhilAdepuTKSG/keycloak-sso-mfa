@@ -1,6 +1,7 @@
-# Build the SPA once, serve it with nginx. The SAME image runs as all five
-# portals; each container is parameterised at start-up (see docker-entrypoint.d)
-# to a different Keycloak client, registry and title.
+# Build the SPA once, serve it with nginx. The SAME image runs as every
+# citizen-facing portal (My Guyana, NIS, GRO, Passport, MPS Scholarships); each
+# container is parameterised at start-up (see docker-entrypoint.d) to a different
+# Keycloak client, registry and title.
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./

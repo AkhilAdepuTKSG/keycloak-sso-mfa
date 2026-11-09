@@ -32,8 +32,7 @@
     </div>
     <form id="kc-eid-enrol" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post">
         <@buttons.actionGroup>
-            <a id="c360-home" class="${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!}" href="${c360HomeUrl}">${msg("c360BackHome")}</a>
-            <@buttons.button id="kc-cancel" name="cancel" label="c360BackToPortal" class=["kcButtonSecondaryClass", "kcButtonBlockClass"] />
+            <@buttons.button id="kc-cancel" name="cancel" label="c360BackToPortal" class=["kcButtonPrimaryClass", "kcButtonBlockClass"] />
         </@buttons.actionGroup>
     </form>
 </#if>

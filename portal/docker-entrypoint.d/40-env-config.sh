@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs via nginx's /docker-entrypoint.d before nginx starts. Writes the runtime
 # config the SPA reads (window.__APP_CONFIG__) from this container's environment,
-# so one image serves all five portals.
+# so one image serves every citizen-facing portal.
 set -e
 
 : "${KEYCLOAK_URL:=http://localhost:7080}"
@@ -12,9 +12,9 @@ set -e
 : "${PORTAL_SUBTITLE:=}"
 : "${RESOLVER_URL:=http://localhost:7090}"
 : "${NIS_API_URL:=http://localhost:7101}"
-: "${MPS_API_URL:=http://localhost:7102}"
 : "${GRO_API_URL:=http://localhost:7103}"
 : "${PASSPORT_API_URL:=http://localhost:7104}"
+: "${SCHOLARSHIPS_API_URL:=http://localhost:7105}"
 : "${LINKS:=[]}"
 
 cat > /usr/share/nginx/html/env-config.js <<EOF
@@ -28,9 +28,9 @@ window.__APP_CONFIG__ = {
   resolverUrl: "${RESOLVER_URL}",
   registryUrls: {
     nis: "${NIS_API_URL}",
-    mps: "${MPS_API_URL}",
     gro: "${GRO_API_URL}",
-    passport: "${PASSPORT_API_URL}"
+    passport: "${PASSPORT_API_URL}",
+    scholarships: "${SCHOLARSHIPS_API_URL}"
   },
   links: ${LINKS}
 };

@@ -1,5 +1,5 @@
 import { keycloak } from "./keycloak";
-import { appConfig } from "./appConfig";
+import { appConfig, RegistryKey } from "./appConfig";
 
 export type Result<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
 
@@ -19,7 +19,7 @@ async function get<T>(url: string): Promise<Result<T>> {
       return { ok: false, status: r.status, message };
     }
     return { ok: true, data: body as T };
-  } catch (err) {
+  } catch {
     return { ok: false, status: 0, message: `Could not reach ${new URL(url).host}` };
   }
 }
@@ -31,6 +31,13 @@ export interface Identifier {
   verified: string;
   source: string;
   updated_at: string;
+}
+
+export interface SourceLink {
+  source_system: string;
+  source_record_id: string;
+  method: string;
+  decided_by: string;
 }
 
 export interface Profile {
@@ -46,7 +53,7 @@ export interface Profile {
     email: string | null;
   };
   identifiers: Identifier[];
-  links: { source_system: string; source_record_id: string; method: string; decided_by: string }[];
+  links: SourceLink[];
 }
 
 export type RegistryRecord = Record<string, string | number | null>;
@@ -55,17 +62,28 @@ export function getProfile(cid: string) {
   return get<Profile>(`${appConfig.resolverUrl}/v1/profile/${encodeURIComponent(cid)}`);
 }
 
-const ROUTES = {
-  nis: "api/nis/members/by-nis-number",
-  mps: "api/mps/employees/by-eid",
-  gro: "api/gro/births/by-registration-number",
-  passport: "api/passport/passports/by-passport-number",
-} as const;
+// Base path of each citizen-facing registry API.
+const BASE: Record<RegistryKey, string> = {
+  nis: "api/nis/members",
+  gro: "api/gro/births",
+  passport: "api/passport/passports",
+  scholarships: "api/scholarships/applications",
+};
 
-export type RegistryKey = keyof typeof ROUTES;
+const BY_NUMBER: Record<Exclude<RegistryKey, "scholarships">, string> = {
+  nis: "by-nis-number",
+  gro: "by-registration-number",
+  passport: "by-passport-number",
+};
 
-export function getRegistryRecords(registry: RegistryKey, number: string) {
+/** GET by the registry's own ID number (NIS number, GRO registration no., passport no.). */
+export function getRecordsByNumber(registry: Exclude<RegistryKey, "scholarships">, number: string) {
   return get<{ records: RegistryRecord[] }>(
-    `${appConfig.registryUrls[registry]}/${ROUTES[registry]}/${encodeURIComponent(number)}`,
+    `${appConfig.registryUrls[registry]}/${BASE[registry]}/${BY_NUMBER[registry]}/${encodeURIComponent(number)}`,
   );
+}
+
+/** GET by record ID. */
+export function getRecordById(registry: RegistryKey, id: string) {
+  return get<{ record: RegistryRecord }>(`${appConfig.registryUrls[registry]}/${BASE[registry]}/${encodeURIComponent(id)}`);
 }

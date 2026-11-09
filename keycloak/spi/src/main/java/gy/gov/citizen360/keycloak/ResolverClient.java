@@ -24,7 +24,7 @@ public class ResolverClient {
 
     private static final Logger LOG = Logger.getLogger(ResolverClient.class);
 
-    public enum Outcome { FOUND, NOT_FOUND, CONFLICT, INACTIVE, UNAVAILABLE }
+    public enum Outcome { FOUND, NOT_FOUND, CONFLICT, SHARED_CONTACT, INACTIVE, UNAVAILABLE }
 
     public record Resolution(Outcome outcome, String cid, String loa, int owners) {
         static Resolution of(Outcome o) {
@@ -86,8 +86,11 @@ public class ResolverClient {
                 }
                 case 404:
                     return Resolution.of(Outcome.NOT_FOUND);
-                case 409:
-                    return new Resolution(Outcome.CONFLICT, null, null, json == null ? 2 : json.path("owners").asInt(2));
+                case 409: {
+                    int owners = json == null ? 2 : json.path("owners").asInt(2);
+                    boolean shared = json != null && "shared_contact".equals(json.path("reason").asText());
+                    return new Resolution(shared ? Outcome.SHARED_CONTACT : Outcome.CONFLICT, null, null, owners);
+                }
                 case 410:
                     return Resolution.of(Outcome.INACTIVE);
                 default:

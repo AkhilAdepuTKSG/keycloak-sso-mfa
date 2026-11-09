@@ -14,6 +14,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Optional;
@@ -21,14 +22,22 @@ import java.util.Optional;
 /**
  * Identifier-first login for the citizen realm.
  *
- * 1. The user types one government ID and a password. The form only offers the
- *    ID types this portal (client) accepts.
+ * 1. The user types one ID and a password. The form only offers the ID types this
+ *    portal (client) accepts.
  * 2. The ID's type is detected from its format. A type the portal doesn't accept
  *    is rejected with a clear message.
  * 3. The Resolver answers resolve(type, value) → CID from Citizen 360.
  *    0 active owners = not found, 1 = continue, 2+ = refuse (and the Resolver alerts).
+ *    A shared contact (a family email) is refused with "use a government ID".
  *    Resolver/ClickHouse down = "try again", never "not found".
  * 4. Keycloak loads the user by username = CID and checks the password.
+ *
+ * The same class runs in two places of the browser flow:
+ *  - level 1 (basic), {@code verifiedStepUp = false}: the login form. Signing in with an
+ *    email gives Basic; with a government ID the session is also good for Verified.
+ *  - level 2 (verified), {@code verifiedStepUp = true}: passes silently when the login used
+ *    a government ID. After an email-only login it asks the signed-in person to confirm
+ *    with a government ID (and only accepts their own).
  *
  * Keycloak itself stores nothing but the CID username and credentials.
  */
@@ -37,20 +46,26 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
     private static final Logger LOG = Logger.getLogger(CitizenIdentifierAuthenticator.class);
 
     static final String TEMPLATE = "citizen-identifier.ftl";
-    /** Auth-session and user-session note: which ID type established this login (NIS, EID, ...). */
+    /** Auth-session and user-session note: which ID type established this login (NIS, EID, EMAIL, ...). */
     public static final String NOTE_ID_TYPE = "citizen.login_id_type";
     /** User-session note: the person's assurance level in Citizen 360 (basic, verified, high). */
     public static final String NOTE_PERSON_LOA = "citizen.person_loa";
 
     private final ResolverClient resolver;
+    private final boolean verifiedStepUp;
 
-    public CitizenIdentifierAuthenticator(ResolverClient resolver) {
+    public CitizenIdentifierAuthenticator(ResolverClient resolver, boolean verifiedStepUp) {
         this.resolver = resolver;
+        this.verifiedStepUp = verifiedStepUp;
     }
 
     @Override
     public void authenticate(AuthenticationFlowContext ctx) {
-        String hint = ctx.getAuthenticationSession().getClientNote("login_hint");
+        if (verifiedStepUp && establishedWithGovernmentId(ctx)) {
+            ctx.success();
+            return;
+        }
+        String hint = verifiedStepUp ? null : ctx.getAuthenticationSession().getClientNote("login_hint");
         ctx.challenge(form(ctx, hint).createForm(TEMPLATE));
     }
 
@@ -59,7 +74,7 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
         MultivaluedMap<String, String> params = ctx.getHttpRequest().getDecodedFormParameters();
         String raw = params.getFirst("identifier");
         String password = params.getFirst("password");
-        PortalPolicy policy = PortalPolicy.of(ctx);
+        PortalPolicy policy = policy(ctx);
         String value = IdType.normalise(raw);
 
         if (value.isEmpty() || password == null || password.isEmpty()) {
@@ -78,8 +93,9 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
 
         if (!policy.allowed().contains(type)) {
             ctx.getEvent().error("citizen_id_type_not_accepted");
+            String error = verifiedStepUp && type.isContact() ? "c360VerifyNeedsGovernmentId" : "c360WrongIdType";
             ctx.challenge(form(ctx, raw)
-                    .setError("c360WrongIdType", policy.portalName(), policy.acceptedPhrase(), type.label())
+                    .setError(error, policy.portalName(), policy.acceptedPhrase(), type.label())
                     .createForm(TEMPLATE));
             return;
         }
@@ -89,6 +105,11 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
             case UNAVAILABLE -> {
                 ctx.getEvent().error("citizen360_unavailable");
                 ctx.challenge(form(ctx, raw).setError("c360TryAgain").createForm(TEMPLATE));
+                return;
+            }
+            case SHARED_CONTACT -> {
+                ctx.getEvent().error("citizen_shared_contact");
+                ctx.challenge(form(ctx, raw).setError("c360SharedContact", type.label()).createForm(TEMPLATE));
                 return;
             }
             case CONFLICT -> {
@@ -116,6 +137,11 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
 
         UserModel already = ctx.getUser();
         if (already != null && !already.getId().equals(user.getId())) {
+            if (verifiedStepUp) {
+                // Confirming the signed-in person with someone else's ID: don't reveal that the ID exists.
+                invalidCredentials(ctx, raw, already);
+                return;
+            }
             ctx.getEvent().user(already).error(Errors.DIFFERENT_USER_AUTHENTICATED);
             ctx.challenge(form(ctx, raw).setError("c360DifferentAccount").createForm(TEMPLATE));
             return;
@@ -148,6 +174,29 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
         ctx.success();
     }
 
+    /** True when this login, or the SSO session it continues, used a government ID (not an email). */
+    private boolean establishedWithGovernmentId(AuthenticationFlowContext ctx) {
+        if (isGovernmentId(ctx.getAuthenticationSession().getAuthNote(NOTE_ID_TYPE))) return true;
+        UserSessionModel us = Sessions.existing(ctx);
+        return us != null && ctx.getUser() != null
+                && us.getUser().getId().equals(ctx.getUser().getId())
+                && isGovernmentId(us.getNote(NOTE_ID_TYPE));
+    }
+
+    private static boolean isGovernmentId(String typeName) {
+        if (typeName == null) return false;
+        try {
+            return !IdType.valueOf(typeName).isContact();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private PortalPolicy policy(AuthenticationFlowContext ctx) {
+        PortalPolicy p = PortalPolicy.of(ctx);
+        return verifiedStepUp ? p.governmentIdsOnly() : p;
+    }
+
     private void invalidCredentials(AuthenticationFlowContext ctx, String raw, UserModel user) {
         if (user == null) {
             // Spend the same time as a password check so response timing doesn't reveal unknown IDs.
@@ -161,19 +210,19 @@ public class CitizenIdentifierAuthenticator implements Authenticator {
     }
 
     private LoginFormsProvider form(AuthenticationFlowContext ctx, String identifier) {
-        PortalPolicy policy = PortalPolicy.of(ctx);
+        PortalPolicy policy = policy(ctx);
         return ctx.form()
+                .setAttribute("c360StepUp", verifiedStepUp)
                 .setAttribute("c360Portal", policy.portalName())
                 .setAttribute("c360IdLabel", policy.label())
                 .setAttribute("c360Chips", policy.chips())
                 .setAttribute("c360Hints", policy.hints())
-                .setAttribute("c360Identifier", identifier == null ? "" : identifier.trim())
-                .setAttribute("c360HomeUrl", ResolverClient.env("CITIZEN_HOME_URL", "http://localhost:7200"));
+                .setAttribute("c360Identifier", identifier == null ? "" : identifier.trim());
     }
 
     @Override
     public boolean requiresUser() {
-        return false;
+        return verifiedStepUp;
     }
 
     @Override

@@ -7,9 +7,9 @@ test("registry numbers are normalised like the Resolver does", () => {
   assert.equal(normaliseNumber("b1984/000101"), "B1984000101");
 });
 
-test("each registry maps to a Citizen 360 ID type", () => {
+test("registry numbers map to Citizen 360 ID types; application numbers do not", () => {
   assert.deepEqual(
     Object.values(REGISTRIES).map((r) => r.idType),
-    ["NIS", "EID", "GRO_BIRTH", "PASSPORT"],
+    ["NIS", "EID", "GRO_BIRTH", "PASSPORT", null],
   );
 });

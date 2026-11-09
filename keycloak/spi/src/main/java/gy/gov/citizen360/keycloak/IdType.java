@@ -42,6 +42,11 @@ public enum IdType {
         return format;
     }
 
+    /** A contact detail rather than a government ID: may be shared, and only reaches Basic assurance. */
+    public boolean isContact() {
+        return this == EMAIL;
+    }
+
     /** Upper case with spaces, dashes, dots and slashes removed; emails are lower-cased instead. */
     public static String normalise(String raw) {
         if (raw == null) return "";

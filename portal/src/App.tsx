@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { keycloak } from "./keycloak";
-import { appConfig, PortalKind } from "./appConfig";
-import { getProfile, getRegistryRecords, Profile, RegistryKey, RegistryRecord, Result } from "./api";
+import { appConfig, PortalKind, RegistryKey } from "./appConfig";
+import { getProfile, getRecordById, getRecordsByNumber, Profile, RegistryRecord, Result } from "./api";
 
 interface Claims {
   sub?: string;
@@ -21,24 +21,24 @@ const ID_LABELS: Record<string, string> = {
   DL: "Driver’s licence",
   EID: "EID",
   GRO_BIRTH: "GRO birth registration",
-  EMAIL: "Email (contact)",
-  PHONE: "Phone (contact)",
+  EMAIL: "Email address",
+  PHONE: "Phone number",
 };
 
 const REGISTRY_TITLES: Record<RegistryKey, string> = {
   nis: "NIS · National Insurance Scheme",
-  mps: "MPS · Public Service employment",
   gro: "GRO · Birth registration",
   passport: "Passport Office",
+  scholarships: "MPS Scholarships",
 };
 
-// What each portal reads, and which Citizen 360 ID it reads it by.
+// Which registries each citizen portal shows. My Guyana shows every citizen-facing one.
 const REGISTRIES_FOR: Record<PortalKind, RegistryKey[]> = {
-  myguyana: ["nis", "mps", "gro", "passport"],
+  myguyana: ["nis", "gro", "passport", "scholarships"],
   nis: ["nis"],
-  mps: ["mps"],
   gro: ["gro"],
   passport: ["passport"],
+  scholarships: ["scholarships"],
 };
 
 type Field = { key: string; label: string; join?: string[] };
@@ -54,17 +54,6 @@ const FIELDS: Record<RegistryKey, Field[]> = {
     { key: "last_contribution", label: "Last contribution" },
     { key: "registered_on", label: "Registered" },
     { key: "status", label: "Status" },
-  ],
-  mps: [
-    { key: "eid", label: "EID" },
-    { key: "name", label: "Name", join: ["first_name", "last_name"] },
-    { key: "ministry", label: "Ministry" },
-    { key: "job_title", label: "Job title" },
-    { key: "grade", label: "Grade" },
-    { key: "employment_status", label: "Status" },
-    { key: "start_date", label: "Start date" },
-    { key: "work_email", label: "Work email" },
-    { key: "eid_issued_on", label: "EID issued" },
   ],
   gro: [
     { key: "registration_no", label: "Registration no." },
@@ -86,6 +75,17 @@ const FIELDS: Record<RegistryKey, Field[]> = {
     { key: "status", label: "Status" },
     { key: "replaced_by", label: "Replaced by" },
   ],
+  scholarships: [
+    { key: "application_no", label: "Application no." },
+    { key: "programme", label: "Programme" },
+    { key: "status", label: "Status" },
+    { key: "institution", label: "Institution" },
+    { key: "academic_year", label: "Academic year" },
+    { key: "award", label: "Award" },
+    { key: "study_level", label: "Level" },
+    { key: "submitted_on", label: "Submitted" },
+    { key: "decision_on", label: "Decision" },
+  ],
 };
 
 type RegistryState =
@@ -94,12 +94,18 @@ type RegistryState =
   | { state: "ok"; records: RegistryRecord[] }
   | { state: "error"; message: string };
 
-function numbersFor(registry: RegistryKey, profile: Profile): string[] {
+const NO_RECORD_REASON: Record<RegistryKey, string> = {
+  nis: "No NIS number is linked to you in Citizen 360.",
+  gro: "No GRO birth registration is linked to you in Citizen 360.",
+  passport: "No passport is linked to you in Citizen 360.",
+  scholarships: "You have no scholarship applications.",
+};
+
+/** Registry numbers to look up: the person's IDs from the Resolver profile (cid claim). */
+function numbersFor(registry: Exclude<RegistryKey, "scholarships">, profile: Profile): string[] {
   switch (registry) {
     case "nis":
       return profile.ids.nis ? [profile.ids.nis] : [];
-    case "mps":
-      return profile.ids.eid ? [profile.ids.eid] : [];
     case "gro":
       return profile.ids.gro_birth ? [profile.ids.gro_birth] : [];
     case "passport":
@@ -111,26 +117,36 @@ function numbersFor(registry: RegistryKey, profile: Profile): string[] {
   }
 }
 
-const NO_ID_REASON: Record<RegistryKey, string> = {
-  nis: "No NIS number is linked to you in Citizen 360.",
-  mps: "No EID is linked to you, so there is no MPS record.",
-  gro: "No GRO birth registration is linked to you in Citizen 360.",
-  passport: "No passport is linked to you in Citizen 360.",
-};
-
 async function loadRegistry(registry: RegistryKey, profile: Profile): Promise<RegistryState> {
-  const numbers = numbersFor(registry, profile);
-  if (!numbers.length) return { state: "none", reason: NO_ID_REASON[registry] };
   const all: RegistryRecord[] = [];
-  for (const n of numbers) {
-    const r = await getRegistryRecords(registry, n);
-    if (!r.ok) {
-      if (r.status === 404) continue;
-      return { state: "error", message: r.message };
+
+  if (registry === "scholarships") {
+    // Applications aren't personal IDs: Citizen 360 links each application record to the person.
+    const ids = profile.links
+      .filter((l) => l.source_system === "SCHOLARSHIPS")
+      .map((l) => l.source_record_id.split(":")[1]);
+    if (!ids.length) return { state: "none", reason: NO_RECORD_REASON.scholarships };
+    for (const id of ids) {
+      const r = await getRecordById("scholarships", id);
+      if (!r.ok) {
+        if (r.status === 404) continue;
+        return { state: "error", message: r.message };
+      }
+      all.push(r.data.record);
     }
-    all.push(...r.data.records);
+  } else {
+    const numbers = numbersFor(registry, profile);
+    if (!numbers.length) return { state: "none", reason: NO_RECORD_REASON[registry] };
+    for (const n of numbers) {
+      const r = await getRecordsByNumber(registry, n);
+      if (!r.ok) {
+        if (r.status === 404) continue;
+        return { state: "error", message: r.message };
+      }
+      all.push(...r.data.records);
+    }
   }
-  return all.length ? { state: "ok", records: all } : { state: "none", reason: "The registry has no record for your ID." };
+  return all.length ? { state: "ok", records: all } : { state: "none", reason: "The registry has no record for you." };
 }
 
 export function App() {
@@ -179,13 +195,6 @@ export function App() {
 
       <SessionCard claims={claims} />
 
-      {appConfig.kind === "mps" && claims.acr !== "high" && (
-        <section className="card alert" role="alert">
-          <h3>High assurance missing</h3>
-          <p>This token's acr is <code>{claims.acr ?? "none"}</code>. MPS Workforce expects <code>high</code>.</p>
-        </section>
-      )}
-
       {profile === null && <section className="card muted">Loading your Citizen 360 profile…</section>}
 
       {profile && !profile.ok && (
@@ -230,10 +239,11 @@ function SessionCard({ claims }: { claims: Claims }) {
     <section className="card session">
       <div className="session-head">
         <h2>Signed in with Citizen 360</h2>
-        <span className={`pill ${acr === "high" ? "pill-high" : "pill-verified"}`}>assurance: {acr}</span>
+        <span className={`pill pill-${acr}`}>assurance: {acr}</span>
       </div>
       <p className="muted">
-        One account for every portal. Opening another portal reuses this session; you won’t be asked to sign in again.
+        One account for every citizen portal. Opening another one reuses this session; you won’t be asked to sign in
+        again unless it needs a higher assurance level.
       </p>
       <dl className="facts">
         <div><dt>Citizen ID (cid)</dt><dd className="mono">{claims.cid ?? "—"}</dd></div>
@@ -315,7 +325,7 @@ function PortalNav() {
   if (!others.length) return null;
   return (
     <section className="card">
-      <h2 className="section-title">Other government portals</h2>
+      <h2 className="section-title">Other citizen portals</h2>
       <p className="muted">These use the same sign-in. You go straight in unless a portal needs a higher assurance level.</p>
       <div className="links">
         {others.map((l) => (

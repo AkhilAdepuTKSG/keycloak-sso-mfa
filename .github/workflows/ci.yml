@@ -27,18 +27,23 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  portal:
+  frontends:
+    name: frontend (${{ matrix.pkg }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [portal, mps-workforce]
     defaults:
       run:
-        working-directory: portal
+        working-directory: ${{ matrix.pkg }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: portal/package-lock.json
+          cache-dependency-path: ${{ matrix.pkg }}/package-lock.json
       - run: npm ci
       - run: npm run build
 

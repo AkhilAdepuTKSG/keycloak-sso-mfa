@@ -38,9 +38,9 @@
 /* One colour per portal so screenshots make it obvious which portal you're on. */
 :root[data-portal="myguyana"] { --brand: #0a6b45; --brand-2: #064d31; }  /* My Guyana  */
 :root[data-portal="nis"]      { --brand: #1d4ed8; --brand-2: #1e3a8a; }  /* NIS        */
-:root[data-portal="mps"]      { --brand: #0f766e; --brand-2: #134e4a; }  /* MPS        */
 :root[data-portal="gro"]      { --brand: #7e22ce; --brand-2: #581c87; }  /* GRO        */
 :root[data-portal="passport"] { --brand: #b45309; --brand-2: #7c2d12; }  /* Passport   */
+:root[data-portal="scholarships"] { --brand: #be185d; --brand-2: #831843; }  /* MPS Scholarships */
 
 * { box-sizing: border-box; }
 
@@ -96,6 +96,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .pill { display: inline-block; font-size: 0.76rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .pill-ok { color: var(--ok); background: var(--ok-soft); }
 .pill-old { color: var(--muted); background: var(--sunk); }
+.pill-basic { color: var(--muted); background: var(--sunk); }
 .pill-verified { color: var(--ok); background: var(--ok-soft); }
 .pill-high { color: var(--warn); background: var(--warn-soft); }
 

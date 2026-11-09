@@ -40,6 +40,15 @@ public record PortalPolicy(List<IdType> allowed, String label, String portalName
         return new PortalPolicy(allowed, label, name);
     }
 
+    /** The same policy without contact types (email): what a Verified step-up accepts. */
+    public PortalPolicy governmentIdsOnly() {
+        List<IdType> gov = new ArrayList<>();
+        for (IdType t : allowed) if (!t.isContact()) gov.add(t);
+        if (gov.size() == allowed.size()) return this;
+        if (gov.isEmpty()) gov = IdType.parseList(BUILT_IN_DEFAULT);
+        return new PortalPolicy(gov, IdType.capitalise(joinLabels(gov)), portalName);
+    }
+
     /** "NIS number" for one type, "NIS number or EID" for two, "a, b or c" for more. */
     public String acceptedPhrase() {
         return joinLabels(allowed);

@@ -15,10 +15,13 @@
 #   7080  Keycloak (realm "citizen"; admin console at /admin)
 #   7090  Resolver API
 #   7123  ClickHouse HTTP
-#   7101  NIS registry API      7102  MPS registry API
-#   7103  GRO registry API      7104  Passport registry API
-#   7200  My Guyana             7201  NIS portal
-#   7202  MPS Workforce         7203  GRO portal        7204  Passport portal
+#   Citizen-facing (My Guyana and the portals it links to):
+#   7200  My Guyana             7201  NIS portal          7203  GRO portal
+#   7204  Passport portal       7205  MPS Scholarships
+#   7101  NIS registry API      7103  GRO registry API
+#   7104  Passport registry API 7105  Scholarships registry API
+#   Public-service staff (not part of My Guyana):
+#   7202  MPS Workforce         7102  MPS registry API
 
 name: citizen360
 
@@ -30,7 +33,7 @@ x-registry-env: &registry-env
   KEYCLOAK_REALM: citizen
   RESOLVER_URL: http://resolver:8090
   RESOLVER_SERVICE_KEY: ${RESOLVER_SERVICE_KEY:-poc-resolver-service-key}
-  CORS_ORIGINS: http://localhost:7200,http://localhost:7201,http://localhost:7202,http://localhost:7203,http://localhost:7204
+  CORS_ORIGINS: http://localhost:7200,http://localhost:7201,http://localhost:7203,http://localhost:7204,http://localhost:7205
 
 x-registry-api: &registry-api
   build: ./registry-api
@@ -53,13 +56,16 @@ x-portal-env: &portal-env
   MPS_API_URL: http://localhost:7102
   GRO_API_URL: http://localhost:7103
   PASSPORT_API_URL: http://localhost:7104
+  SCHOLARSHIPS_API_URL: http://localhost:7105
+  # Citizen-facing portals only. MPS Workforce is a staff portal and isn't linked from here.
   LINKS: >-
-    [{"kind":"myguyana","title":"My Guyana","url":"http://localhost:7200","note":"360 view · any ID"},
+    [{"kind":"myguyana","title":"My Guyana","url":"http://localhost:7200","note":"360 view · any government ID"},
      {"kind":"nis","title":"NIS Portal","url":"http://localhost:7201","note":"NIS number only"},
-     {"kind":"mps","title":"MPS Workforce","url":"http://localhost:7202","note":"needs High assurance (EID)"},
-     {"kind":"gro","title":"GRO Portal","url":"http://localhost:7203","note":"any ID"},
-     {"kind":"passport","title":"Passport Portal","url":"http://localhost:7204","note":"passport number only"}]
+     {"kind":"gro","title":"GRO Portal","url":"http://localhost:7203","note":"any government ID"},
+     {"kind":"passport","title":"Passport Portal","url":"http://localhost:7204","note":"passport number only"},
+     {"kind":"scholarships","title":"MPS Scholarships","url":"http://localhost:7205","note":"email (basic) or any ID"}]
 
+# One image for every citizen-facing portal (My Guyana, NIS, GRO, Passport, Scholarships).
 x-portal: &portal
   build: ./portal
   image: citizen360-portal:latest
@@ -101,7 +107,6 @@ services:
       CITIZEN_RESOLVER_URL: http://resolver:8090
       CITIZEN_RESOLVER_KEY: ${RESOLVER_SERVICE_KEY:-poc-resolver-service-key}
       CITIZEN_RESOLVER_TIMEOUT_MS: "3000"
-      CITIZEN_HOME_URL: http://localhost:7200
     ports:
       - "127.0.0.1:7080:8080"
     depends_on:
@@ -157,7 +162,7 @@ services:
       RESOLVER_SERVICE_KEY: ${RESOLVER_SERVICE_KEY:-poc-resolver-service-key}
       KEYCLOAK_ISSUER: http://localhost:7080/realms/citizen
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
-      CORS_ORIGINS: http://localhost:7200,http://localhost:7201,http://localhost:7202,http://localhost:7203,http://localhost:7204
+      CORS_ORIGINS: http://localhost:7200,http://localhost:7201,http://localhost:7202,http://localhost:7203,http://localhost:7204,http://localhost:7205
     ports:
       - "127.0.0.1:7090:8090"
     # No depends_on: the Resolver starts and stays up whether or not ClickHouse is.
@@ -194,13 +199,15 @@ services:
     ports:
       - "127.0.0.1:7101:8080"
 
+  # Public-service workforce register: only MPS Workforce may call it (not My Guyana).
   mps-api:
     <<: *registry-api
     environment:
       <<: *registry-env
       REGISTRY: mps
       DATABASE_URL: postgres://registry:${REGISTRY_DB_PASSWORD:-change-me-registry-db}@registry-db:5432/mps_registry
-      AZP_ALLOWED: mps-portal,my-guyana
+      AZP_ALLOWED: mps-portal
+      CORS_ORIGINS: http://localhost:7202
     ports:
       - "127.0.0.1:7102:8080"
 
@@ -223,6 +230,16 @@ services:
       AZP_ALLOWED: passport-portal,my-guyana
     ports:
       - "127.0.0.1:7104:8080"
+
+  scholarships-api:
+    <<: *registry-api
+    environment:
+      <<: *registry-env
+      REGISTRY: scholarships
+      DATABASE_URL: postgres://registry:${REGISTRY_DB_PASSWORD:-change-me-registry-db}@registry-db:5432/scholarships_registry
+      AZP_ALLOWED: mps-scholarships,my-guyana
+    ports:
+      - "127.0.0.1:7105:8080"
 
   # ------------------------------------------------------------- Portals ----
   my-guyana:
@@ -247,16 +264,6 @@ services:
     ports:
       - "127.0.0.1:7201:80"
 
-  mps-portal:
-    <<: *portal
-    environment:
-      <<: *portal-env
-      CLIENT_ID: mps-portal
-      PORTAL_KIND: mps
-      PORTAL_TITLE: MPS Workforce
-      PORTAL_SUBTITLE: Ministry of Public Service · High assurance
-    ports:
-      - "127.0.0.1:7202:80"
 
   gro-portal:
     <<: *portal
@@ -280,6 +287,33 @@ services:
     ports:
       - "127.0.0.1:7204:80"
 
+  mps-scholarships:
+    <<: *portal
+    environment:
+      <<: *portal-env
+      CLIENT_ID: mps-scholarships
+      PORTAL_KIND: scholarships
+      PORTAL_TITLE: MPS Scholarships
+      PORTAL_SUBTITLE: Ministry of Public Service · citizen scholarships
+    ports:
+      - "127.0.0.1:7205:80"
+
+  # --------------------------------------------- Public-service staff ----
+  # MPS Workforce: its own frontend, not part of My Guyana. Same realm, so SSO works,
+  # but the client needs acr "high" (EID step-up).
+  mps-portal:
+    build: ./mps-workforce
+    image: citizen360-mps-workforce:latest
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://localhost:7080
+      KEYCLOAK_REALM: citizen
+      CLIENT_ID: mps-portal
+      RESOLVER_URL: http://localhost:7090
+      MPS_API_URL: http://localhost:7102
+    ports:
+      - "127.0.0.1:7202:80"
+
   # ----------------------------------------------------------- Seed job ----
   # Links the registries into Citizen 360 and creates the Keycloak test users.
   # Runs once per `up`; safe to re-run (`docker compose run --rm seed`).
@@ -295,6 +329,7 @@ services:
       MPS_API_URL: http://mps-api:8080
       GRO_API_URL: http://gro-api:8080
       PASSPORT_API_URL: http://passport-api:8080
+      SCHOLARSHIPS_API_URL: http://scholarships-api:8080
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_ADMIN_USER: ${CLICKHOUSE_ADMIN_USER:-admin}
       CLICKHOUSE_ADMIN_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:-change-me-clickhouse-admin}
@@ -316,6 +351,8 @@ services:
       gro-api:
         condition: service_healthy
       passport-api:
+        condition: service_healthy
+      scholarships-api:
         condition: service_healthy
 
 volumes:

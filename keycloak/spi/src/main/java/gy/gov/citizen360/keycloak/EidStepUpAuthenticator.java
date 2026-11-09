@@ -14,7 +14,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
-import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
@@ -131,33 +130,20 @@ public class EidStepUpAuthenticator implements Authenticator {
         if (IdType.EID.name().equals(authSession.getAuthNote(CitizenIdentifierAuthenticator.NOTE_ID_TYPE))) {
             return true;
         }
-        UserSessionModel userSession = existingUserSession(ctx);
+        UserSessionModel userSession = Sessions.existing(ctx);
         if (userSession == null || !userSession.getUser().getId().equals(ctx.getUser().getId())) return false;
         return IdType.EID.name().equals(userSession.getNote(CitizenIdentifierAuthenticator.NOTE_ID_TYPE))
                 || "true".equals(userSession.getNote(NOTE_EID_VERIFIED));
     }
 
-    private UserSessionModel existingUserSession(AuthenticationFlowContext ctx) {
-        KeycloakSession session = ctx.getSession();
-        RealmModel realm = ctx.getRealm();
-        // The user session id equals the root authentication session id.
-        UserSessionModel us = session.sessions().getUserSession(realm, ctx.getAuthenticationSession().getParentSession().getId());
-        if (us != null) return us;
-        AuthenticationManager.AuthResult cookie = AuthenticationManager.authenticateIdentityCookie(session, realm, true);
-        return cookie == null ? null : cookie.getSession();
-    }
-
     private LoginFormsProvider stepUpForm(AuthenticationFlowContext ctx, String identifier) {
         return ctx.form()
                 .setAttribute("c360Portal", portalName(ctx))
-                .setAttribute("c360Identifier", identifier == null ? "" : identifier.trim())
-                .setAttribute("c360HomeUrl", ResolverClient.env("CITIZEN_HOME_URL", "http://localhost:7200"));
+                .setAttribute("c360Identifier", identifier == null ? "" : identifier.trim());
     }
 
     private LoginFormsProvider enrolPage(AuthenticationFlowContext ctx) {
-        return ctx.form()
-                .setAttribute("c360Portal", portalName(ctx))
-                .setAttribute("c360HomeUrl", ResolverClient.env("CITIZEN_HOME_URL", "http://localhost:7200"));
+        return ctx.form().setAttribute("c360Portal", portalName(ctx));
     }
 
     private static String portalName(AuthenticationFlowContext ctx) {
